@@ -10,7 +10,7 @@ export const dummyUser = {
     name: "Alex Rivera",
     email: "alex@example.com",
 };
-
+  
 export const initialProjects = [
     {
         _id: "proj-1",
