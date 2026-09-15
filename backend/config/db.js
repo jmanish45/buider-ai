@@ -8,6 +8,10 @@ export async function connectToDatabase() {
     mongoose.connection.on('error', (error)=>{
         console.log("MongoDB connection error:", error);
     })
-    await mongoose.connect(process.env.MONGODB_URI);
+    const uri = process.env.MONGODB_URI || process.env.MONGOB_URI;
+    if (!uri) {
+        throw new Error("MONGODB_URI is not defined in the environment variables (.env file).");
+    }
+    await mongoose.connect(uri);
     console.log("Database connection established.")
 }
