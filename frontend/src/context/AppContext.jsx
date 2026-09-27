@@ -27,6 +27,7 @@ export function AppContextProvider({children}){
      const [generatingProject, setGeneratingProject] = useState(false);
      const [activeFile, setActiveFile] = useState("/App.js");
      const [showCode, setShowCode] = useState(false);
+     const [agentSteps, setAgentSteps] = useState([]);  // Timeline of agent actions for dashboard
 
     // Check whether the current session is authenticated.
       const checkSession = async ()=>{
@@ -156,10 +157,16 @@ export function AppContextProvider({children}){
         // Join the project room to receive events for this project
         socket.emit('project:join', projectId);
 
-        // Track whether the project is in an ongoing generation/revision state
-        const isOngoing = activeProject.status === "generating" || activeProject.status === "pending" || activeProject.status === "revising";
+        // Track whether the project is in an ongoing generation/revision/review state
+        const isOngoing = activeProject.status === "generating" || activeProject.status === "pending" || activeProject.status === "revising" || activeProject.status === "reviewing";
         if (isOngoing) {
             setChatLoading(true);
+        } else {
+            // Clear agent steps when generation is no longer ongoing
+            if (agentSteps.length > 0 && activeProject.status === "completed") {
+                // Keep steps visible for a moment, then clear
+                setTimeout(() => setAgentSteps([]), 5000);
+            }
         }
 
         // --- WebSocket event handlers ---
@@ -213,6 +220,19 @@ export function AppContextProvider({children}){
         socket.on('revision:complete', onComplete);
         socket.on('generation:failed', onFailed);
 
+        // Agent orchestration events (new in Phase 2)
+        const onAgentStep = (data) => {
+            console.log('[WS] Received agent:step', data);
+            setAgentSteps(prev => [...prev, { ...data, timestamp: Date.now() }]);
+        };
+        const onAgentReview = (data) => {
+            console.log('[WS] Received agent:review', data);
+            setAgentSteps(prev => [...prev, { agent: 'reviewer', status: 'done', message: `Review: ${data.summary}`, data, timestamp: Date.now() }]);
+        };
+
+        socket.on('agent:step', onAgentStep);
+        socket.on('agent:review', onAgentReview);
+
         // Safety fallback: poll every 8 seconds in case a WS event is missed
         // (e.g. brief network blip). This is much less aggressive than the old 2s.
         let fallbackInterval = null;
@@ -230,6 +250,8 @@ export function AppContextProvider({children}){
             socket.off('generation:complete', onComplete);
             socket.off('revision:complete', onComplete);
             socket.off('generation:failed', onFailed);
+            socket.off('agent:step', onAgentStep);
+            socket.off('agent:review', onAgentReview);
             if (fallbackInterval) clearInterval(fallbackInterval);
         };
 
@@ -344,7 +366,8 @@ export function AppContextProvider({children}){
             handleDelete,
             logout,
             updateProjectFiles,
-            handleChat
+            handleChat,
+            agentSteps,
         }}>
             {children}
         </AppContext.Provider>

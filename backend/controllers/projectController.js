@@ -1,6 +1,6 @@
 import { Project } from "../models/Project.js";
 import crypto from "crypto";
-import { generateProject } from "../services/ai.js";
+import { Orchestrator } from "../services/agents/orchestrator.js";
 import { socketManager } from "../services/socketManager.js";
 
 
@@ -61,11 +61,15 @@ export async function createProject(req, res){
     })
 }
 
-// Background worker to progressive generate files and update database in real-time.
+// Background worker: runs the multi-agent orchestration pipeline.
+// Uses: Planner → Coder → Reviewer → Fixer (self-correcting loop)
 async function runBackgroundGeneration(projectId, prompt){
     try {
-        console.log(`[Background AI] Starting generation for project ${projectId}`);
-        const result = await generateProject(prompt, {
+        console.log(`[Background AI] Starting multi-agent generation for project ${projectId}`);
+
+        const orchestrator = new Orchestrator(projectId);
+
+        const result = await orchestrator.execute(prompt, {
             onPlan: async (plan) =>{
                 console.log(`[Background AI] Plan created for project ${projectId}. Planned ${plan.files.length} files.`);
                 const fileList = plan.files.map((f)=>`- \`${f.path}\`: ${f.description}`).join("\n");
@@ -77,7 +81,7 @@ async function runBackgroundGeneration(projectId, prompt){
                     $push: {
                         messages: {
                             role: "assistant",
-                            content: `Planned website structure:\n${fileList}`,
+                            content: `🧠 **Planner Agent** planned website structure:\n${fileList}`,
                             timestamp: new Date(),
                         }
                     }
@@ -112,7 +116,7 @@ async function runBackgroundGeneration(projectId, prompt){
                     project.filesGenerated = [...(project.filesGenerated || []), path];
                     project.messages.push({
                         role: "assistant",
-                        content: `Created file "${path}"`,
+                        content: `✍️ **Coder Agent** created file "${path}"`,
                         timestamp: new Date(),
                     });
                     project.currentFile = null;
@@ -126,13 +130,57 @@ async function runBackgroundGeneration(projectId, prompt){
                         currentFile: null,
                     });
                 }
-            }
+            },
+            onReview: async (review, iteration) => {
+                console.log(`[Background AI] Review round ${iteration}: score=${review.score}, errors=${review.errorCount}`);
+                const project = await Project.findById(projectId);
+                if (project) {
+                    project.status = "reviewing";
+                    project.messages.push({
+                        role: "assistant",
+                        content: `🔍 **Reviewer Agent** (round ${iteration}): Score ${review.score}/10 — ${review.errorCount} errors, ${review.warningCount} warnings.${review.errorCount > 0 ? ' Sending to Fixer Agent...' : ' Quality check passed!'}`,
+                        timestamp: new Date(),
+                    });
+                    await project.save();
+                }
+            },
+            onFixStart: async (iteration) => {
+                console.log(`[Background AI] Fixer starting (round ${iteration})`);
+                const project = await Project.findById(projectId);
+                if (project) {
+                    project.messages.push({
+                        role: "assistant",
+                        content: `🔧 **Fixer Agent** auto-correcting issues (round ${iteration})...`,
+                        timestamp: new Date(),
+                    });
+                    await project.save();
+                }
+            },
+            onFixComplete: async (iteration) => {
+                console.log(`[Background AI] Fixer complete (round ${iteration})`);
+                // After fixing, update files in DB with the corrected versions
+                const project = await Project.findById(projectId);
+                if (project) {
+                    const fixedFiles = orchestrator.context.getAllFiles();
+                    for (const [path, code] of Object.entries(fixedFiles)) {
+                        project.files[path] = { content: code, hash: hashContent(code) };
+                    }
+                    project.markModified("files");
+                    await project.save();
+                }
+            },
         })
 
         console.log(`[Background AI] Successfully generated project ${projectId}`);
 
         const project = await Project.findById(projectId);
         if(project){
+            // Update files with final corrected versions from orchestrator
+            const finalFiles = result.files;
+            for (const [path, code] of Object.entries(finalFiles)) {
+                project.files[path] = { content: code, hash: hashContent(code) };
+            }
+            project.markModified("files");
             project.status = "completed";
             project.version = 1;
             if(result.description){
@@ -140,7 +188,7 @@ async function runBackgroundGeneration(projectId, prompt){
             }
             project.messages.push({
                 role: "assistant",
-                content: `Website generation complete! You can view and edit the files.`,
+                content: `✅ Website generation complete! All agents finished successfully.`,
                 timestamp: new Date(),
             })
             await project.save();

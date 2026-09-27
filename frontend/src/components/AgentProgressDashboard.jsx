@@ -1,10 +1,23 @@
-import { CheckCircle2Icon, CircleIcon, Loader2Icon } from "lucide-react";
+import { CheckCircle2Icon, CircleIcon, Loader2Icon, BrainIcon, CodeIcon, SearchIcon, WrenchIcon, SparklesIcon } from "lucide-react";
+import { useAppContext } from "../context/AppContext";
+
+// Map agent names to icons and colors
+const AGENT_CONFIG = {
+    planner:      { icon: BrainIcon,    label: 'Planner',     color: 'text-violet-500' },
+    coder:        { icon: CodeIcon,     label: 'Coder',       color: 'text-blue-500' },
+    reviewer:     { icon: SearchIcon,   label: 'Reviewer',    color: 'text-amber-500' },
+    fixer:        { icon: WrenchIcon,   label: 'Fixer',       color: 'text-emerald-500' },
+    orchestrator: { icon: SparklesIcon, label: 'Orchestrator', color: 'text-zinc-500' },
+};
 
 export default function AgentProgressDashboard({ project }) {
+    const { agentSteps } = useAppContext();
+
     const planned = project.filesPlanned || [];
     const completed = project.filesGenerated || [];
     const current = project.currentFile;
     const isFailed = project.status === "failed";
+    const isReviewing = project.status === "reviewing";
 
     return (
         <div className="h-full w-full bg-zinc-50 flex flex-col items-center justify-center p-6 md:p-12 overflow-y-auto">
@@ -17,10 +30,16 @@ export default function AgentProgressDashboard({ project }) {
                                 ? "Generation Failed"
                                 : project.status === "pending"
                                   ? "Planning Architecture..."
-                                  : "AI Agent is Building..."}
+                                  : isReviewing
+                                    ? "Reviewing Code Quality..."
+                                    : "AI Agents are Building..."}
                         </h2>
                         <p className="text-xs text-zinc-500 mt-0.5">
-                            {isFailed ? "An error occurred during build" : "Writing production-ready React codebase"}
+                            {isFailed
+                                ? "An error occurred during build"
+                                : isReviewing
+                                  ? "Reviewer agent is checking for issues"
+                                  : "Multi-agent pipeline: Planner → Coder → Reviewer → Fixer"}
                         </p>
                     </div>
                 </div>
@@ -43,6 +62,46 @@ export default function AgentProgressDashboard({ project }) {
                                 className="h-full bg-zinc-700 transition-all duration-500 ease-out"
                                 style={{ width: `${(completed.length / planned.length) * 100}%` }}
                             />
+                        </div>
+                    </div>
+                )}
+
+                {/* Agent Timeline — shows what each agent is doing in real-time */}
+                {agentSteps.length > 0 && (
+                    <div className="mb-6">
+                        <span className="block text-[10px] font-semibold text-zinc-400 uppercase tracking-widest mb-3">
+                            Agent Activity
+                        </span>
+                        <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                            {agentSteps.slice(-8).map((step, i) => {
+                                const config = AGENT_CONFIG[step.agent] || AGENT_CONFIG.orchestrator;
+                                const AgentIcon = config.icon;
+                                const isRunning = step.status === 'running';
+                                const isDone = step.status === 'done';
+
+                                return (
+                                    <div
+                                        key={i}
+                                        className={`flex items-center gap-2.5 py-1.5 px-2.5 rounded-lg transition-all ${
+                                            isRunning ? "bg-zinc-50/80 border border-zinc-200" : "border border-transparent"
+                                        }`}
+                                    >
+                                        {isRunning ? (
+                                            <Loader2Icon size={13} className={`animate-spin ${config.color} shrink-0`} />
+                                        ) : isDone ? (
+                                            <CheckCircle2Icon size={13} className={`${config.color} shrink-0`} />
+                                        ) : (
+                                            <AgentIcon size={13} className={`${config.color} shrink-0`} />
+                                        )}
+                                        <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider w-16 shrink-0">
+                                            {config.label}
+                                        </span>
+                                        <span className={`text-xs truncate ${isRunning ? "text-zinc-700 font-medium" : "text-zinc-500"}`}>
+                                            {step.message}
+                                        </span>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 )}
