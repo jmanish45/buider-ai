@@ -1,6 +1,7 @@
 import { Project } from "../models/Project.js";
 import crypto from "crypto";
 import { generateProject } from "../services/ai.js";
+import { socketManager } from "../services/socketManager.js";
 
 
 function hashContent(content){
@@ -81,12 +82,24 @@ async function runBackgroundGeneration(projectId, prompt){
                         }
                     }
                 })
+
+                // Real-time: notify frontend that plan is ready
+                socketManager.emitToProject(projectId, 'generation:plan', {
+                    name: plan.projectName || "Generated Project",
+                    status: 'generating',
+                    filesPlanned: plan.files,
+                });
             },
             onFileStart: async (path)=>{
                 console.log(`[Background AI] Starting file ${path} for project ${projectId}`);
                 await Project.findByIdAndUpdate(projectId, {
                     currentFile: path,
                 })
+
+                // Real-time: notify frontend that a file is being generated
+                socketManager.emitToProject(projectId, 'generation:file_start', {
+                    currentFile: path,
+                });
             },
             onFileComplete: async (path, code)=>{
                 console.log(`[Background AI] Finished file ${path} for project ${projectId}`);
@@ -105,6 +118,13 @@ async function runBackgroundGeneration(projectId, prompt){
                     project.currentFile = null;
                     project.markModified("files");
                     await project.save();
+
+                    // Real-time: notify frontend that a file is complete
+                    socketManager.emitToProject(projectId, 'generation:file_done', {
+                        path,
+                        filesGenerated: project.filesGenerated,
+                        currentFile: null,
+                    });
                 }
             }
         })
@@ -124,6 +144,12 @@ async function runBackgroundGeneration(projectId, prompt){
                 timestamp: new Date(),
             })
             await project.save();
+
+            // Real-time: notify frontend that generation is fully complete
+            socketManager.emitToProject(projectId, 'generation:complete', {
+                status: 'completed',
+                version: project.version,
+            });
         }
     } catch (err) {
         console.error(`[Background AI] Fatal generation error for project ${projectId}:`, err);
@@ -138,6 +164,12 @@ async function runBackgroundGeneration(projectId, prompt){
                 }
             }
         })
+
+        // Real-time: notify frontend that generation failed
+        socketManager.emitToProject(projectId, 'generation:failed', {
+            status: 'failed',
+            error: err.message,
+        });
     }
 }
 

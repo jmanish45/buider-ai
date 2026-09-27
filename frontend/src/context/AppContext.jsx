@@ -1,9 +1,10 @@
 // Import React APIs and application dependencies.
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import api from "../api/api";
 import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 import debounce from "lodash.debounce";
+import { socket } from "../services/socket";
 // Create the shared application context.
 const AppContext = createContext(undefined);
 
@@ -133,21 +134,104 @@ export function AppContextProvider({children}){
             }
       }
 
-    // Poll the active project while it is being generated or revised.
+    // Connect/disconnect socket based on authentication state.
+    useEffect(() => {
+        if (user) {
+            socket.connect();
+        } else {
+            socket.disconnect();
+        }
+        return () => {
+            socket.disconnect();
+        };
+    }, [user]);
+
+    // Listen for real-time WebSocket events on the active project.
+    // Replaces the old 2-second polling interval with instant updates.
        useEffect(()=>{
         if (!activeProject?._id || !user) return;
 
-        const isOngoing = activeProject.status === "generating" || activeProject.status === "pending" || activeProject.status === "revising";
+        const projectId = activeProject._id;
 
-        if(isOngoing){
+        // Join the project room to receive events for this project
+        socket.emit('project:join', projectId);
+
+        // Track whether the project is in an ongoing generation/revision state
+        const isOngoing = activeProject.status === "generating" || activeProject.status === "pending" || activeProject.status === "revising";
+        if (isOngoing) {
             setChatLoading(true);
-            const interval = setInterval(()=>{
-                loadProject(activeProject._id,true)
-            },2000);
-            return ()=> clearInterval(interval)
-        }else{
-            setChatLoading(false);
         }
+
+        // --- WebSocket event handlers ---
+
+        const onPlan = (data) => {
+            console.log('[WS] Received generation:plan', data);
+            setActiveProject(prev => prev ? {
+                ...prev,
+                name: data.name || prev.name,
+                status: data.status || prev.status,
+                filesPlanned: data.filesPlanned || prev.filesPlanned,
+            } : prev);
+        };
+
+        const onFileStart = (data) => {
+            console.log('[WS] Received generation:file_start', data);
+            setActiveProject(prev => prev ? {
+                ...prev,
+                currentFile: data.currentFile,
+            } : prev);
+        };
+
+        const onFileDone = (data) => {
+            console.log('[WS] Received generation:file_done', data);
+            // Reload full project to get file contents (WS only sends metadata)
+            loadProject(projectId, true);
+        };
+
+        const onComplete = (data) => {
+            console.log('[WS] Received generation:complete or revision:complete', data);
+            // Reload full project to get final state with all files
+            loadProject(projectId, true);
+            setChatLoading(false);
+        };
+
+        const onFailed = (data) => {
+            console.log('[WS] Received generation:failed', data);
+            setActiveProject(prev => prev ? {
+                ...prev,
+                status: 'failed',
+                error: data.error,
+            } : prev);
+            setChatLoading(false);
+            toast.error(`Generation failed: ${data.error}`);
+        };
+
+        socket.on('generation:plan', onPlan);
+        socket.on('generation:file_start', onFileStart);
+        socket.on('generation:file_done', onFileDone);
+        socket.on('generation:complete', onComplete);
+        socket.on('revision:complete', onComplete);
+        socket.on('generation:failed', onFailed);
+
+        // Safety fallback: poll every 8 seconds in case a WS event is missed
+        // (e.g. brief network blip). This is much less aggressive than the old 2s.
+        let fallbackInterval = null;
+        if (isOngoing) {
+            fallbackInterval = setInterval(() => {
+                loadProject(projectId, true);
+            }, 8000);
+        }
+
+        return () => {
+            socket.emit('project:leave', projectId);
+            socket.off('generation:plan', onPlan);
+            socket.off('generation:file_start', onFileStart);
+            socket.off('generation:file_done', onFileDone);
+            socket.off('generation:complete', onComplete);
+            socket.off('revision:complete', onComplete);
+            socket.off('generation:failed', onFailed);
+            if (fallbackInterval) clearInterval(fallbackInterval);
+        };
 
        },[activeProject?._id, activeProject?.status, loadProject, user])
 

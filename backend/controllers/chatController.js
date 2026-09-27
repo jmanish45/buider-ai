@@ -1,6 +1,7 @@
 import { Project } from "../models/Project.js";
 import { reviseProject } from "../services/ai.js";
 import { applyOperations } from "../services/diff.js";
+import { socketManager } from "../services/socketManager.js";
 
 export function buildManifest(files){
     const manifest = [];
@@ -81,6 +82,12 @@ export async function chat(req, res){
          });
 
          await project.save();
+
+         // Real-time: notify frontend that revision is complete
+         socketManager.emitToProject(project._id.toString(), 'revision:complete', {
+             status: 'completed',
+             version: project.version,
+         });
 
          // Return updated project
          const filesObj = {};
