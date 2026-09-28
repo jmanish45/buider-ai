@@ -1,3 +1,5 @@
+import { buildCompressedContext } from './contextCompressor.js';
+
 // --- System Prompts ---
 // All AI prompts are centralized here for easy editing and consistency.
 
@@ -301,7 +303,7 @@ Rules:
 - Each description should be one sentence explaining what that file does
 - Do NOT write any code — only plan the file list`;
 
-export function buildFileCodeSystem(allFiles, alreadyGeneratedFiles) {
+export function buildFileCodeSystem(allFiles, alreadyGeneratedFiles, currentFile = null) {
     const fileList = allFiles
         .map((f) => {
             const impStr = f.imports && f.imports.length > 0 ? ` (Imports: ${f.imports.join(", ")})` : "";
@@ -310,15 +312,7 @@ export function buildFileCodeSystem(allFiles, alreadyGeneratedFiles) {
         })
         .join("\n");
 
-    let contextStr = "";
-    if (alreadyGeneratedFiles && Object.keys(alreadyGeneratedFiles).length > 0) {
-        contextStr =
-            "\n\nCRITICAL CONTEXT — Already Generated Files:\n" +
-            "The following files have already been generated. You MUST align your exports, imports, CSS selectors, or props signatures EXACTLY with these files:\n";
-        for (const [path, code] of Object.entries(alreadyGeneratedFiles)) {
-            contextStr += `\nFile: ${path}\n\`\`\`javascript\n${code}\n\`\`\`\n`;
-        }
-    }
+    const contextStr = buildCompressedContext(allFiles, alreadyGeneratedFiles, currentFile);
 
     return `${BASE_SYSTEM}
 

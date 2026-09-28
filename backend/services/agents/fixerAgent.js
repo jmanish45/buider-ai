@@ -9,7 +9,7 @@
  * Output: Updated files with fixes applied
  */
 
-import { generateObject } from 'ai';
+import { executeResilientLLM } from '../llmResilience.js';
 import { z } from 'zod';
 import { normalizeContent } from '../contentNormalizer.js';
 import { validateAndFixCode } from '../codeValidator.js';
@@ -26,7 +26,7 @@ const FixResultSchema = z.object({
 });
 
 export class FixerAgent {
-    constructor(model) {
+    constructor(model = null) {
         this.model = model;
         this.name = 'fixer';
     }
@@ -115,12 +115,10 @@ Rules:
 - Fix import paths to match actual file names in the project`;
 
         try {
-            const { object: result } = await generateObject({
-                model: this.model,
+            const { object: result } = await executeResilientLLM({
                 schema: FixResultSchema,
                 system: FIXER_SYSTEM,
                 prompt,
-                maxRetries: 1,
             });
             return result.fixes || [];
         } catch (err) {

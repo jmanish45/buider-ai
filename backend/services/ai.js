@@ -5,6 +5,7 @@ import { FileCodeSchema, FilePlanSchema, RevisionResultSchema } from './aiSchema
 import { buildFileCodeSystem, FILE_PLAN_SYSTEM, REVISE_SYSTEM } from './prompts.js';
 import { normalizeContent } from './contentNormalizer.js';
 import { validateAndFixCode, validateRevisionContent } from './codeValidator.js';
+import { executeResilientLLM } from './llmResilience.js';
 
 // --- OpenRouter Model Client Setup ---
 const MODEL = process.env.OPENROUTER_MODEL || "openrouter/free";
@@ -196,13 +197,11 @@ export async function reviseProject(prompt, manifest, relevantFiles, recentMessa
 
     console.log("[AI] Revising project...");
 
-    const { object: rawParsed } = await generateObject({
-        model,
+    const { object: rawParsed } = await executeResilientLLM({
         schema: RevisionResultSchema,
         system: REVISE_SYSTEM,
         prompt: contextParts.join("\n"),
-        maxRetries: 2
-    })
+    });
 
     if(rawParsed && Array.isArray(rawParsed.operations)){
         rawParsed.operations = rawParsed.operations.map((op)=>{

@@ -41,12 +41,12 @@ export class Orchestrator {
         this.projectId = projectId;
         this.context = new AgentContext(projectId);
 
-        // Initialize all agents with the same model
+        // Initialize all agents (they utilize resilient multi-model fallback execution)
         this.agents = {
-            planner: new PlannerAgent(model),
-            coder: new CoderAgent(model),
-            reviewer: new ReviewerAgent(model),
-            fixer: new FixerAgent(model),
+            planner: new PlannerAgent(),
+            coder: new CoderAgent(),
+            reviewer: new ReviewerAgent(),
+            fixer: new FixerAgent(),
         };
     }
 

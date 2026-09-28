@@ -8,12 +8,12 @@
  * Output: { files: [{path, description, exports, imports}], projectName, projectDescription }
  */
 
-import { generateObject } from 'ai';
+import { executeResilientLLM } from '../llmResilience.js';
 import { FilePlanSchema } from '../aiSchemas.js';
 import { FILE_PLAN_SYSTEM } from '../prompts.js';
 
 export class PlannerAgent {
-    constructor(model) {
+    constructor(model = null) {
         this.model = model;
         this.name = 'planner';
     }
@@ -23,13 +23,16 @@ export class PlannerAgent {
 
         console.log(`[PlannerAgent] Planning file structure for: "${prompt.slice(0, 80)}..."`);
 
-        const { object: plan } = await generateObject({
-            model: this.model,
+        const { object: plan, modelUsed } = await executeResilientLLM({
             schema: FilePlanSchema,
             system: FILE_PLAN_SYSTEM,
             prompt: `Plan a React website for: ${prompt}`,
-            maxRetries: 2,
+            onFallback: (fromModel, toModel) => {
+                context.addTimelineEntry(this.name, `Model fallback: ${fromModel} → ${toModel}`);
+            },
         });
+
+        console.log(`[PlannerAgent] Generated plan using model '${modelUsed}'`);
 
         // Ensure /App.js always exists
         if (!plan.files.find((f) => f.path === '/App.js')) {

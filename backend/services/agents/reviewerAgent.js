@@ -14,7 +14,7 @@
  * Output: { issues: [{file, severity, message, suggestion}], score, summary }
  */
 
-import { generateObject } from 'ai';
+import { executeResilientLLM } from '../llmResilience.js';
 import { z } from 'zod';
 import { REVIEW_SYSTEM } from '../prompts.js';
 
@@ -33,7 +33,7 @@ const ReviewResultSchema = z.object({
 });
 
 export class ReviewerAgent {
-    constructor(model) {
+    constructor(model = null) {
         this.model = model;
         this.name = 'reviewer';
     }
@@ -131,12 +131,10 @@ export class ReviewerAgent {
         const prompt = `## Project Plan\n${planSummary}\n\n## Generated Files\n${fileContents}\n\nReview these files for quality, consistency, and correctness. Focus on:\n1. Cross-file import/export mismatches\n2. Missing functionality that the plan describes\n3. Style inconsistencies across components\n4. Common React anti-patterns\n5. Accessibility issues`;
 
         try {
-            const { object: review } = await generateObject({
-                model: this.model,
+            const { object: review } = await executeResilientLLM({
                 schema: ReviewResultSchema,
                 system: REVIEW_SYSTEM,
                 prompt,
-                maxRetries: 1,
             });
             return review;
         } catch (err) {

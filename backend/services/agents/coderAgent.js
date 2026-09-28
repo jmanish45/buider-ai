@@ -11,17 +11,18 @@
  * Output: { path: code } map of all generated files
  */
 
-import { generateObject } from 'ai';
+import { executeResilientLLM } from '../llmResilience.js';
 import pMap from 'p-map';
 import { FileCodeSchema } from '../aiSchemas.js';
 import { buildFileCodeSystem } from '../prompts.js';
 import { normalizeContent } from '../contentNormalizer.js';
 import { validateAndFixCode } from '../codeValidator.js';
+import { getFallbackTemplate } from '../templateScaffold.js';
 
-const MAX_CONCURRENCY = parseInt(process.env.AI_MAX_CONCURRENCY || '6', 10);
+const MAX_CONCURRENCY = parseInt(process.env.AI_MAX_CONCURRENCY || '4', 10);
 
 export class CoderAgent {
-    constructor(model) {
+    constructor(model = null) {
         this.model = model;
         this.name = 'coder';
     }
@@ -30,26 +31,40 @@ export class CoderAgent {
      * Generate code for a single file.
      */
     async generateSingleFile(file, allFiles, prompt, alreadyGeneratedFiles) {
-        const system = buildFileCodeSystem(allFiles, alreadyGeneratedFiles);
+        // Pass file as 3rd param for target-aware context compression
+        const system = buildFileCodeSystem(allFiles, alreadyGeneratedFiles, file);
 
         const userMsg = `Project: ${prompt}\n\nWrite the complete code for: ${file.path}\nPurpose: ${file.description}`;
 
         console.log(`[CoderAgent] Generating: ${file.path}...`);
-        const { object } = await generateObject({
-            model: this.model,
-            schema: FileCodeSchema,
-            system,
-            prompt: userMsg,
-            maxRetries: 2,
-        });
+        
+        let code = '';
+        try {
+            const { object, modelUsed } = await executeResilientLLM({
+                schema: FileCodeSchema,
+                system,
+                prompt: userMsg,
+            });
 
-        let code = normalizeContent(object.code);
+            code = normalizeContent(object.code);
+            console.log(`[CoderAgent] Generated ${file.path} via '${modelUsed}'`);
+        } catch (err) {
+            console.warn(`[CoderAgent] Generation error for ${file.path}: ${err.message}`);
+            // Check for deterministic fallback scaffold template
+            const fallback = getFallbackTemplate(file.path);
+            if (fallback) {
+                console.log(`[CoderAgent] Applied verified static scaffold for ${file.path}`);
+                code = fallback;
+            } else {
+                throw err;
+            }
+        }
 
         if (code.trim().length === 0) {
             throw new Error('Generated code is empty after normalization');
         }
 
-        // Apply post-generation validation and auto-fixing
+        // Apply post-generation static AST validation and auto-fixing
         const validation = validateAndFixCode(code, file.path, { allPlannedFiles: allFiles });
         code = validation.code;
 
