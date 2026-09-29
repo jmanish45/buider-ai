@@ -18,9 +18,18 @@ export function validateAndFixCode(code, filePath, context) {
         warnings.push(`${filePath}: Stripped markdown code fences`);
     }
 
-    // Also handle cases where fences appear at the very start/end with other content
+    // Strip markdown code fences that some models wrap around code
     code = code.replace(/^```(?:jsx?|javascript|css|html|tsx?|react)?\s*\n/, "");
     code = code.replace(/\n```\s*$/, "");
+
+    // Sanitize any raw HTML entities like &nbsp; in code
+    if (code.includes("&nbsp;") || code.includes("&quot;") || code.includes("&#39;")) {
+        code = code
+            .replace(/&nbsp;/g, " ")
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;|&apos;|&#x27;/g, "'");
+        warnings.push(`${filePath}: Sanitized HTML entities (&nbsp;, &quot;) to standard characters`);
+    }
 
     if (isCSS) {
         // CSS-specific fixes — minimal, just trim and return

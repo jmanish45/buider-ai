@@ -28,5 +28,12 @@ export function normalizeContent(content) {
     // This is safe because "contains escaped quotes" is always invalid syntax in JSX/React.
     content = content.replace(/(\w+)=\\"([^"]*?)\\"/g, '$1="$2"');
 
+    // Decode HTML entities that LLMs sometimes hallucinate into raw code (e.g. &nbsp;, &quot;, &#39;)
+    content = content
+        .replace(/&nbsp;/g, " ")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;|&apos;|&#x27;/g, "'")
+        .replace(/&amp;/g, "&");
+
     return content;
 }

@@ -9,15 +9,16 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import { generateObject } from 'ai';
 
-// Prioritized pool of high-quality free/efficient models on OpenRouter
+// Prioritized pool of fast, high-uptime free models on OpenRouter
 export const DEFAULT_MODEL_POOL = [
-    process.env.OPENROUTER_MODEL || 'cohere/north-mini-code:free',
-    'meta-llama/llama-3.3-70b-instruct:free',
+    process.env.OPENROUTER_MODEL,
     'google/gemini-2.0-flash-exp:free',
-    'deepseek/deepseek-r1-distill-llama-70b:free',
+    'meta-llama/llama-3.3-70b-instruct:free',
     'mistralai/mistral-small-3.2-24b-instruct:free',
+    'deepseek/deepseek-r1-distill-llama-70b:free',
+    'cohere/north-mini-code:free',
     'openrouter/free'
-].filter((m, idx, arr) => m && arr.indexOf(m) === idx); // deduplicate
+].filter(Boolean).filter((m, idx, arr) => arr.indexOf(m) === idx); // deduplicate
 
 const openrouter = createOpenAI({
     baseURL: 'https://openrouter.ai/api/v1',
@@ -28,23 +29,14 @@ const openrouter = createOpenAI({
  * Sleep helper with exponential backoff and randomized jitter
  */
 function sleepWithJitter(baseDelayMs, attempt) {
-    const exponentialDelay = baseDelayMs * Math.pow(2, attempt);
-    const jitter = Math.random() * 500; // 0-500ms random jitter to avoid thundering herd
-    const delay = Math.min(exponentialDelay + jitter, 10000); // cap at 10s
+    const exponentialDelay = baseDelayMs * Math.pow(1.5, attempt);
+    const jitter = Math.random() * 300;
+    const delay = Math.min(exponentialDelay + jitter, 5000); // cap at 5s
     return new Promise((resolve) => setTimeout(resolve, delay));
 }
 
 /**
  * Execute an LLM call with multi-model fallback and rate-limit retry logic.
- * 
- * @param {Object} options
- * @param {Object} options.schema - Zod schema for structured output
- * @param {string} options.system - System prompt
- * @param {string} options.prompt - User message / instruction
- * @param {number} [options.temperature=0.3]
- * @param {Array<string>} [options.modelPool=DEFAULT_MODEL_POOL]
- * @param {Function} [options.onFallback] - Callback when model switches (agent, fallbackModel, error)
- * @returns {Promise<{ object: any, modelUsed: string, attempts: number }>}
  */
 export async function executeResilientLLM(options) {
     const {
@@ -54,6 +46,7 @@ export async function executeResilientLLM(options) {
         temperature = 0.3,
         modelPool = DEFAULT_MODEL_POOL,
         onFallback,
+        timeoutMs = 30000, // 30s timeout per call to prevent hanging
     } = options;
 
     let lastError = null;
@@ -75,6 +68,7 @@ export async function executeResilientLLM(options) {
                     prompt,
                     temperature,
                     maxRetries: 0, // We handle retries and fallbacks ourselves
+                    abortSignal: AbortSignal.timeout(timeoutMs),
                 });
 
                 const duration = Date.now() - startTime;

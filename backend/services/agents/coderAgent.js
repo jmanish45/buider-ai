@@ -19,7 +19,7 @@ import { normalizeContent } from '../contentNormalizer.js';
 import { validateAndFixCode } from '../codeValidator.js';
 import { getFallbackTemplate } from '../templateScaffold.js';
 
-const MAX_CONCURRENCY = parseInt(process.env.AI_MAX_CONCURRENCY || '4', 10);
+const MAX_CONCURRENCY = parseInt(process.env.AI_MAX_CONCURRENCY || '2', 10);
 
 export class CoderAgent {
     constructor(model = null) {
