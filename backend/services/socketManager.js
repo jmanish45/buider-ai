@@ -16,14 +16,17 @@ class SocketManager {
             },
         });
 
-        // Authenticate every socket connection with the same JWT cookie used by REST
+        // Authenticate socket connections with cookie OR auth header/token
         this.io.use((socket, next) => {
             try {
                 const cookieHeader = socket.handshake.headers.cookie || '';
-                const token = cookieHeader.match(/token=([^;]+)/)?.[1];
+                const cookieToken = cookieHeader.match(/token=([^;]+)/)?.[1];
+                const authToken = socket.handshake.auth?.token;
+                const token = cookieToken || authToken;
+                
                 if (!token) return next(new Error('Authentication required'));
 
-                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
                 socket.userId = decoded.userId;
                 next();
             } catch (err) {

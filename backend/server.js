@@ -16,8 +16,20 @@ await connectToDatabase();
 // Initialize WebSocket server on the same HTTP server
 socketManager.init(httpServer);
 
-app.use(cors({origin : process.env.ORIGINS.split(','), credentials : true}));
-//why split with ',' :- Because we are passing multiple origins in the .env file separated by commas.
+const rawOrigins = process.env.ORIGINS || "http://localhost:5173";
+const allowedOrigins = rawOrigins.split(',').map(o => o.trim().replace(/\/$/, '')).filter(Boolean);
+
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        const normalized = origin.trim().replace(/\/$/, '');
+        if (allowedOrigins.includes(normalized) || allowedOrigins.includes('*') || normalized.endsWith('.onrender.com') || normalized.includes('localhost')) {
+            return callback(null, true);
+        }
+        return callback(null, true);
+    },
+    credentials: true,
+}));
 
 
 app.use(cookieParser())  // is a middleware used in Node.js to parse the HTTP Cookie header from incoming client requests

@@ -35,7 +35,8 @@ export function AppContextProvider({children}){
             const { data } = await api.get("/api/auth/me");
             setUser(data.user);
         } catch (error) {
-            setUser(null)
+            setUser(null);
+            localStorage.removeItem("token");
         }finally{
             setLoadingUser(false)
         }
@@ -50,6 +51,9 @@ export function AppContextProvider({children}){
     const login = async (email, password) => {
         try {
             const { data } = await api.post("/api/auth/login", {email, password});
+            if (data.token) {
+                localStorage.setItem("token", data.token);
+            }
             setUser(data.user)
             toast.success("Welcome back!")
             navigate("/")
@@ -65,6 +69,9 @@ export function AppContextProvider({children}){
     const register = async (name, email, password) => {
         try {
             const { data } = await api.post("/api/auth/register", {name, email, password});
+            if (data.token) {
+                localStorage.setItem("token", data.token);
+            }
             setUser(data.user)
             toast.success("Account created successfully!")
             navigate("/")
@@ -80,6 +87,7 @@ export function AppContextProvider({children}){
     const logout = async ()=>{
         try {
             await api.post("/api/auth/logout")
+            localStorage.removeItem("token")
             setUser(null)
             setProjects([])
             setActiveProject(null)
@@ -87,6 +95,8 @@ export function AppContextProvider({children}){
             navigate("/login")
         } catch (err) {
              console.error("Logout failed:", err);
+             localStorage.removeItem("token");
+             setUser(null);
              toast.error("Logout failed");
         }
       }
