@@ -42,6 +42,17 @@ export function validateAndFixCode(code, filePath, context) {
 
     // --- JS/JSX-specific fixes ---
 
+    // 1.5. Separate concatenated import/export statements that lack newlines or semicolons
+    // e.g. "import React from 'react' import '../styles.css' export default function"
+    const concatenatedImportRegex = /(import\s+(?:\{[^}]*\}|[\w*]+(?:\s*,\s*\{[^}]*\})?|['"][^'"]*?['"])(?:\s+from\s+['"][^'"]*?['"])?)\s*(?=(?:import|export|const|let|var|function|class)\b)/g;
+    if (concatenatedImportRegex.test(code)) {
+        code = code.replace(concatenatedImportRegex, '$1;\n');
+        warnings.push(`${filePath}: Separated concatenated import/export statements`);
+    }
+
+    // Ensure export default function/const is on its own line if preceded by a semicolon
+    code = code.replace(/;\s*(export\s+(?:default\s+)?(?:function|class|const|let|var)\b)/g, ';\n$1');
+
     // 2. Fix `class=` → `className=` in JSX (but not inside strings or comments)
     // Match class= that appears inside JSX tags (after < and before >)
     const classFixRegex = /(<[a-zA-Z][^>]*?)\bclass=/g;
